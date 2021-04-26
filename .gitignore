@@ -1,3 +1,7 @@
+# Secret keys and stuff
+/tokens.py
+/channels.json
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
