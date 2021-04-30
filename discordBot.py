@@ -30,31 +30,18 @@ def writeJsonDoc(dumpData):
         json.dump(dumpData, f, indent=4)
 
 
-def getMainChannel(channelID, guildID):
-    for channel in channels[str(guildID)]:
-        if channel == str(channelID):
-            return channel
-    return False
-
-
 def getNumberOfChildren(mainChannelID, guildID):
     return len(channels[str(guildID)][str(mainChannelID)])
 
 
-def getLeaf(mainChannelID, guildID):
-    numberOfChildren = getNumberOfChildren(mainChannel, guildID)
-    if numberOfChildren == 0:
-        return mainChannel
-    else:
-        return channels[guildID][mainChannelID][numberOfChildren - 1]
-
-
 async def createChildVC(mainChannel):
+    childs = getNumberOfChildren(mainChannel.id, mainChannel.guild.id) + 1
     fullName = mainChannel.name.rsplit(" ", 1)
     NAME = fullName[0] + ' ' + \
         (str((getNumberOfChildren(mainChannel.id, mainChannel.guild.id)) + 2))
-    print(NAME)
+    print(f"Created a new voice channel called {NAME}")
     clonedChannel = await mainChannel.clone(name=NAME)
+    await clonedChannel.edit(position=childs + mainChannel.position)
     channels[str(mainChannel.guild.id)][str(
         mainChannel.id)].append(clonedChannel.id)
     writeJsonDoc(channels)
@@ -85,6 +72,7 @@ async def createChildrenForMainChannel(mainChannel, GUILD):
 
 
 async def deleteChannel(channel, mainChannel):
+    print(f"Deleted channel : {channel.name}")
     await channel.delete()
     channels[str(channel.guild.id)][str(
         mainChannel.id)].remove(channel.id)
@@ -144,12 +132,15 @@ async def on_voice_state_update(member, before, after):
         await deleteChannels(mainChannel)
 
     if after.channel != before.channel and after.channel != None and before.channel != None:
-        print("Changed Voice Channel")
+        # print("Changed Voice Channel")
+        print("")
     elif after.channel != before.channel and after.channel != None:
-        print("Joined Voice Channel")
+        # print("Joined Voice Channel")
+        print("")
     elif after.channel != before.channel and after.channel == None:
-        print("Left Voice Channel")
-    # print(after)
+        # print("Left Voice Channel")
+        print("")
+        # print(after)
 
 
 @ bot.event
@@ -178,13 +169,24 @@ async def addVoiceChannelAsMain(ctx, voiceChannelID):
         return
     try:
         channel = bot.get_channel(int(voiceChannelID))
-        await channel.edit(position=100, name="Casual Party 1")
     except AttributeError:
         ctx.send("Please send an actual voice channel ID")
-    print(channel.position)
     channels[str(ctx.guild.id)][str(voiceChannelID)] = []
     writeJsonDoc(channels)
     await ctx.send(f"Set voice channel: \"**{channel.name}**\" as a main voice channel")
 
+
+@ bot.command()
+async def removeVoiceChannelAsMain(ctx, voiceChannelID):
+    if not checkIfNumber(voiceChannelID):
+        ctx.send("The ID you specified is not a number")
+        return
+    try:
+        channel = bot.get_channel(int(voiceChannelID))
+    except AttributeError:
+        ctx.send("Please send an actual voice channel ID")
+    channels[str(channel.guild.id)].pop(voiceChannelID)
+    writeJsonDoc(channels)
+    await ctx.send(f"Removed voice channel: {channel.name} as a main channel")
 
 bot.run(tokens.TOKEN)
