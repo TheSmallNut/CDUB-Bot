@@ -60,24 +60,76 @@ async def createChildVC(mainChannel):
     writeJsonDoc(channels)
 
 
-@bot.event
+async def createChildFromLeaf(mainChannel):
+    MAINCHANNEL = bot.get_channel(int(mainChannel))
+    mainChannelJSONLocation = channels[str(
+        MAINCHANNEL.guild.id)][str(MAINCHANNEL.id)]
+    numberOfChildren = getNumberOfChildren(
+        MAINCHANNEL.id, MAINCHANNEL.guild.id)
+    if numberOfChildren == 0:
+        return
+    channelID = mainChannelJSONLocation[len(mainChannelJSONLocation) - 1]
+    leafChannel = bot.get_channel(int(channelID))
+    numberOfMembersInLeafChannel = len(leafChannel.members)
+    if numberOfMembersInLeafChannel != 0:
+        await createChildVC(MAINCHANNEL)
+
+
+async def createChildrenForMainChannel(mainChannel, GUILD):
+    if getNumberOfChildren(mainChannel, GUILD.id) != 0:
+        return
+    channel = bot.get_channel(int(mainChannel))
+    membersInChannel = channel.members
+    if len(membersInChannel) != 0:
+        await createChildVC(channel)
+
+
+async def deleteChannel(channel, mainChannel):
+    await channel.delete()
+    channels[str(channel.guild.id)][str(
+        mainChannel.id)].remove(channel.id)
+    writeJsonDoc(channels)
+
+
+async def deleteChannels(mainChannel):
+    MAINCHANNEL = bot.get_channel(int(mainChannel))
+    JSONLocation = channels[str(
+        MAINCHANNEL.guild.id)][str(MAINCHANNEL.id)]
+    numberOfChildren = numberOfChildren = getNumberOfChildren(
+        MAINCHANNEL.id, MAINCHANNEL.guild.id)
+    leafChannelLocation = len(JSONLocation) - 1
+    if numberOfChildren == 0:
+        return
+    leafChannel = bot.get_channel(int(JSONLocation[leafChannelLocation]))
+    if numberOfChildren == 1:
+        if len(MAINCHANNEL.members) == 0:
+            await deleteChannel(leafChannel, MAINCHANNEL)
+    else:
+        secondLeafChannel = bot.get_channel(
+            int(JSONLocation[len(JSONLocation)-2]))
+        if len(secondLeafChannel.members) == 0 and len(leafChannel.members) == 0:
+            await deleteChannel(leafChannel, MAINCHANNEL)
+            await deleteChannels(mainChannel)
+
+
+@ bot.event
 async def on_ready():
     print(f"{bot.user} has connected to Discord!")
 
 
-@bot.event
+@ bot.event
 async def on_guild_join(guild):
     channels[guild.id] = {}
     writeJsonDoc(channels)
 
 
-@bot.event
+@ bot.event
 async def on_guild_remove(guild):
     channels.pop(guild.id)
     writeJsonDoc(channels)
 
 
-@bot.event
+@ bot.event
 async def on_voice_state_update(member, before, after):
     GUILD = member.guild
     BEFORECHANNEL = before.channel
@@ -87,13 +139,13 @@ async def on_voice_state_update(member, before, after):
     if BEFORECHANNEL == AFTERCHANNEL:
         return
     for mainChannel in channels[str(GUILD.id)]:
-        if getNumberOfChildren(mainChannel, GUILD.id) == 0:
-            channel = bot.get_channel(int(mainChannel))
-            membersInChannel = channel.members
-            if len(membersInChannel) != 0:
-                await createChildVC(channel)
+        await createChildrenForMainChannel(mainChannel, GUILD)
+        await createChildFromLeaf(mainChannel)
+        await deleteChannels(mainChannel)
 
-    if after.channel != before.channel and after.channel != None:
+    if after.channel != before.channel and after.channel != None and before.channel != None:
+        print("Changed Voice Channel")
+    elif after.channel != before.channel and after.channel != None:
         print("Joined Voice Channel")
     elif after.channel != before.channel and after.channel == None:
         print("Left Voice Channel")
@@ -109,6 +161,13 @@ async def on_message(ctx):
 @ bot.command()
 async def ping(ctx):
     await ctx.send(f"pong")
+
+
+@ bot.command()
+async def setPosition(ctx, voiceChannelID, position):
+    channel = bot.get_channel(int(voiceChannelID))
+    await channel.edit(position=int(position))
+    await ctx.send(f"Position of {channel.name} is now {channel.position}")
 
 
 @ bot.command()
