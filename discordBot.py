@@ -2,6 +2,7 @@ import discord
 import json
 import tokens
 from discord.ext import commands
+from discord.ext.commands import has_permissions, MissingPermissions
 
 
 bot = discord.Client()
@@ -151,7 +152,7 @@ async def on_message(ctx):
 
 @ bot.command()
 async def ping(ctx):
-    await ctx.send(f"pong")
+    await ctx.send('Pong! {0}'.format(round(bot.latency, 4)))
 
 
 @ bot.command()
@@ -161,7 +162,8 @@ async def setPosition(ctx, voiceChannelID, position):
     await ctx.send(f"Position of {channel.name} is now {channel.position}")
 
 
-@ bot.command()
+@ bot.command(name="addVoiceChannelAsMain")
+@ has_permissions(manage_channels=True)
 async def addVoiceChannelAsMain(ctx, voiceChannelID):
     # convert to integer from string
     if not checkIfNumber(voiceChannelID):
@@ -169,24 +171,31 @@ async def addVoiceChannelAsMain(ctx, voiceChannelID):
         return
     try:
         channel = bot.get_channel(int(voiceChannelID))
+        await ctx.send(f"Set voice channel: \"**{channel.name}**\" as a main voice channel")
+        channels[str(ctx.guild.id)][str(voiceChannelID)] = []
+        writeJsonDoc(channels)
     except AttributeError:
-        ctx.send("Please send an actual voice channel ID")
-    channels[str(ctx.guild.id)][str(voiceChannelID)] = []
-    writeJsonDoc(channels)
-    await ctx.send(f"Set voice channel: \"**{channel.name}**\" as a main voice channel")
+        await ctx.send("Please send an actual voice channel ID")
+        return
 
 
-@ bot.command()
+@ bot.command(name="removeVoiceChannelAsMain")
+@ has_permissions(manage_channels=True)
 async def removeVoiceChannelAsMain(ctx, voiceChannelID):
     if not checkIfNumber(voiceChannelID):
         ctx.send("The ID you specified is not a number")
         return
     try:
         channel = bot.get_channel(int(voiceChannelID))
+        channelName = channel.name
+        channels[str(channel.guild.id)].pop(voiceChannelID)
+        await ctx.send(f"Removed voice channel: **{channel.name}** as a main channel")
+        writeJsonDoc(channels)
     except AttributeError:
-        ctx.send("Please send an actual voice channel ID")
-    channels[str(channel.guild.id)].pop(voiceChannelID)
-    writeJsonDoc(channels)
-    await ctx.send(f"Removed voice channel: {channel.name} as a main channel")
+        await ctx.send("Please send an actual voice channel ID")
+    except KeyError:
+        channel = bot.get_channel(int(voiceChannelID))
+        await ctx.send(f"**{channel.name}** was not a Main Channel")
+
 
 bot.run(tokens.TOKEN)
