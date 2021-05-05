@@ -238,6 +238,5 @@ async def removeVoiceChannelAsMain(ctx, *, voiceChannel):
         writeJsonDoc(channels)
     except KeyError:
         await ctx.send(f"**{channel.name}** is not a Main Channel")
-        ##########
 
 bot.run(tokens.TOKEN)
