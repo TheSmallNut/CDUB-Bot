@@ -1,6 +1,7 @@
 # Secret keys and stuff
 /tokens.py
 /channels.json
+/prefixes.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

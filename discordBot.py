@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 import discord
 import json
 import tokens
@@ -5,8 +6,17 @@ from discord.ext import commands
 from discord.ext.commands import has_permissions, MissingPermissions
 
 
+def openJsonDoc(nameOfDoc):
+    with open(f'{nameOfDoc}.json', 'r') as f:
+        data = json.load(f)
+    return data
+
+def get_prefix(client, message):
+    prefixes = openJsonDoc("prefixes")
+    return prefixes[str(message.guild.id)]
+
 bot = discord.Client()
-bot = commands.Bot(command_prefix='$')
+bot = commands.Bot(command_prefix=get_prefix)
 
 
 def checkIfNumber(number):
@@ -17,17 +27,13 @@ def checkIfNumber(number):
         return False
 
 
-def openJsonDoc(nameOfDoc):
-    with open(f'{nameOfDoc}.json', 'r') as f:
-        data = json.load(f)
-    return data
 
 
 channels = openJsonDoc('channels')
 
 
-def writeJsonDoc(dumpData):
-    with open(f'channels.json', 'w') as f:
+def writeJsonDoc(dumpData, location = "channels"):
+    with open(f'{location}.json', 'w') as f:
         json.dump(dumpData, f, indent=4)
 
 
@@ -39,7 +45,7 @@ async def createChildVC(mainChannel):
     childs = getNumberOfChildren(mainChannel.id, mainChannel.guild.id) + 1
     fullName = mainChannel.name.rsplit(" ", 1)
     NAME = fullName[0] + ' ' + \
-        (str((getNumberOfChildren(mainChannel.id, mainChannel.guild.id)) + 2))
+        (str((getNumberOfChildren(mainChannel.id, mainChannel.guild.id)) + 1 + int(fullName[1])))
     print(f"Created channel : {NAME}")
     clonedChannel = await mainChannel.clone(name=NAME)
     channels[str(mainChannel.guild.id)][str(
@@ -58,7 +64,7 @@ async def createChildFromLeaf(mainChannel):
         return
     channelID = mainChannelJSONLocation[len(mainChannelJSONLocation) - 1]
     leafChannel = bot.get_channel(int(channelID))
-    numberOfMembersInLeafChannel = len(leafChannel.members)
+    numberOfMembersInLeafChannel = len(leafChannel.voice_states)
     if numberOfMembersInLeafChannel != 0:
         await createChildVC(MAINCHANNEL)
 
@@ -67,7 +73,8 @@ async def createChildrenForMainChannel(mainChannel, GUILD):
     if getNumberOfChildren(mainChannel, GUILD.id) != 0:
         return
     channel = bot.get_channel(int(mainChannel))
-    membersInChannel = channel.members
+    membersInChannel = channel.voice_states
+    #print(f"{channel.name} : {membersInChannel} : {len(membersInChannel)}")
     if len(membersInChannel) != 0:
         await createChildVC(channel)
 
@@ -101,7 +108,7 @@ async def deleteChannels(mainChannelID):
     MAINCHANNEL = bot.get_channel(int(mainChannelID))
     JSONLocation = channels[str(
         MAINCHANNEL.guild.id)][str(MAINCHANNEL.id)]
-    numberOfChildren = numberOfChildren = getNumberOfChildren(
+    numberOfChildren = getNumberOfChildren(
         MAINCHANNEL.id, MAINCHANNEL.guild.id)
     leafChannelLocation = len(JSONLocation) - 1
     if numberOfChildren == 0:
@@ -110,17 +117,20 @@ async def deleteChannels(mainChannelID):
     if leafChannel == None:
         return
     if numberOfChildren == 1:
-        if len(MAINCHANNEL.members) == 0:
+        if len(MAINCHANNEL.voice_states) == 0:
             await deleteChannel(leafChannel, MAINCHANNEL)
     else:
         secondLeafChannel = bot.get_channel(
             int(JSONLocation[len(JSONLocation)-2]))
         if secondLeafChannel == None:
             return
-        if len(secondLeafChannel.members) == 0 and len(leafChannel.members) == 0:
+        if len(secondLeafChannel.voice_states) == 0 and len(leafChannel.voice_states) == 0:
             await deleteChannel(leafChannel, MAINCHANNEL)
             await deleteChannels(MAINCHANNEL.id)
 
+async def sendEmbedMessage(ctx, Title, Description, Color = 0x00ff00):
+        embedVar = discord.Embed(title=Title, description = Description, color= Color)
+        await ctx.send(embed=embedVar)
 
 @ bot.event
 async def on_ready():
@@ -129,7 +139,11 @@ async def on_ready():
 
 @ bot.event
 async def on_guild_join(guild):
-    channels[guild.id] = {}
+    prefixes = openJsonDoc("prefixes")
+    prefixes[str(guild.id)] = "$"
+    writeJsonDoc(prefixes, "prefixes")
+
+    channels[str(guild.id)] = {}
     writeJsonDoc(channels)
 
 
@@ -148,7 +162,7 @@ async def on_voice_state_update(member, before, after):
     # Makes sure they arent just deafening and undeafening
     if BEFORECHANNEL == AFTERCHANNEL:
         return
-    for mainChannel in channels[str(GUILD.id)]:
+    for mainChannel in channels[str(GUILD.id)]: 
         await createChildrenForMainChannel(mainChannel, GUILD)
         await createChildFromLeaf(mainChannel)
         await deleteChannels(mainChannel)
@@ -174,11 +188,32 @@ async def on_message(ctx):
 async def ping(ctx):
     await ctx.send('Pong! {0}'.format(round(bot.latency, 4)))
 
+@ bot.command(name="changePrefix", aliases=["cp", "CP", "cP", "changeprefix", "CHANGEPREFIX"])
+@ has_permissions(administrator=True)
+async def _changePrefix(ctx, prefix):
+    prefixes = openJsonDoc("prefixes")
+    prefixes[str(ctx.guild.id)] = prefix
+    writeJsonDoc(prefixes, "prefixes")
+    await sendEmbedMessage(ctx, "Changed Prefix", f"Changed prefix to {prefix} ")
+
+@ bot.command(name="clear", aliases=["c","CLEAR","C"])
+@ has_permissions(manage_messages=True)
+async def _clear(ctx, amount = 10):
+    try:
+        await ctx.channel.purge(limit = int(amount) + 1)
+    except:
+        await sendEmbedMessage(ctx,"ERROR", f"Messages are already being deleted, please try again after they stop being deleted", 0xff0000)
+
 
 @ bot.command(name="currentVoiceChannels", aliases=["CVC", "cvc", "current", "Current", "CURRENTVOICECHANNELS", "currentvoicechannels"])
 @ has_permissions(manage_channels=True)
 async def _currentVoiceChannels(ctx):
-    print(ctx)
+    bigString = ""
+    for channelID in channels[str(ctx.guild.id)]:
+        channel = bot.get_channel(int(channelID))
+        children = getNumberOfChildren(channelID, ctx.guild.id)
+        bigString += f"\n **{channel.name}** | {children} children"
+    await sendEmbedMessage(ctx, "All voice channels", bigString)
 
 
 @ bot.command(name="addVoiceChannel", aliases=["AVC", "avc", "addvoicechannel", "ADDVOICECHANNEL"])
@@ -188,7 +223,8 @@ async def addVoiceChannelAsMain(ctx, *, voiceChannel):
         try:
             channel = bot.get_channel(int(voiceChannel))
             await addNumberToVCName(channel)
-            await ctx.send(f"Set voice channel: \"**{channel.name}**\" as a main voice channel")
+            await sendEmbedMessage(ctx, "Set Voice Channel", f"Set voice channel: **{channel.name}** as a main voice channel")
+            ##await ctx.send(f"Set voice channel: \"**{channel.name}**\" as a main voice channel")
             channels[str(ctx.guild.id)][str(voiceChannel)] = []
             writeJsonDoc(channels)
             return
@@ -198,13 +234,16 @@ async def addVoiceChannelAsMain(ctx, *, voiceChannel):
     channel = discord.utils.find(
         lambda c: c.name.lower() == voiceChannel.lower() and c.type.name == 'voice', allChannels)
     if channel == None:
-        await ctx.send("Please send an actual voice channel")
+        await sendEmbedMessage(ctx, "ERROR", f"**{channel.name}** is not an actual channel name", 0xff0000)
+        ##await ctx.send("Please send an actual voice channel")
         return
     if str(channel.id) in channels[str(ctx.guild.id)]:
-        await ctx.send(f"**{channel.name}** is already a main voice channel")
+        await sendEmbedMessage(ctx, "ERROR", f"**{channel.name}** is already a main voice channel", 0xff0000)
+        ##await ctx.send(f"**{channel.name}** is already a main voice channel")
         return
     await addNumberToVCName(channel)
-    await ctx.send(f"Set voice channel: \"**{channel.name}**\" as a main voice channel")
+    await sendEmbedMessage(ctx, "Set Voice Channel", f"Set voice channel: **{channel.name}** as a main voice channel")
+    ##await ctx.send(f"Set voice channel: \"**{channel.name}**\" as a main voice channel")
     channels[str(ctx.guild.id)][str(channel.id)] = []
     writeJsonDoc(channels)
 
@@ -217,7 +256,8 @@ async def removeVoiceChannelAsMain(ctx, *, voiceChannel):
     if checkIfNumber(voiceChannel):
         try:
             channel = bot.get_channel(int(voiceChannel))
-            await ctx.send(f"Removed voice channel: **{channel.name}** as a main channel")
+            ##await ctx.send(f"Removed voice channel: **{channel.name}** as a main channel")
+            await sendEmbedMessage(ctx, "Removed Voice Channel", f"Removed voice channel: **{channel.name}** as a main channel")
             channels[str(channel.guild.id)].pop(str(channel.id))
             writeJsonDoc(channels)
             return
@@ -229,14 +269,17 @@ async def removeVoiceChannelAsMain(ctx, *, voiceChannel):
     channel = discord.utils.find(
         lambda c: c.name.lower() == voiceChannel.lower() and c.type.name == 'voice', allChannels)
     if channel == None:
-        await ctx.send("Please send an actual voice channel")
+        await sendEmbedMessage(ctx, "ERROR", f"**{channel.name}** is not an actual channel name", 0xff0000)
+        ##await ctx.send("Please send an actual voice channel")
         return
     try:
         await deleteChannelsNoException(channel)
         channels[str(channel.guild.id)].pop(str(channel.id))
-        await ctx.send(f"Removed voice channel: **{channel.name}** as a main channel")
+        await sendEmbedMessage(ctx, "Removed Voice Channel", f"Removed voice channel: **{channel.name}** as a main channel")
+        ##await ctx.send(f"Removed voice channel: **{channel.name}** as a main channel")
         writeJsonDoc(channels)
     except KeyError:
-        await ctx.send(f"**{channel.name}** is not a Main Channel")
+        await sendEmbedMessage(ctx, "ERROR", f"**{channel.name}** is not a main voice channel", 0xff0000)
+        ##await ctx.send(f"**{channel.name}** is not a Main Channel")
 
-bot.run(tokens.TOKEN)
+bot.run(tokens.CDUBTOKEN)
